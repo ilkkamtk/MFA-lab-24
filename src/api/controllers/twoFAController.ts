@@ -1,11 +1,12 @@
 import {NextFunction, Request, Response} from 'express';
 import CustomError from '../../classes/CustomError';
-import {User} from '@sharedTypes/DBTypes';
-import {UserResponse} from '@sharedTypes/MessageTypes';
+import {TokenContent, User, UserWithLevel} from '@sharedTypes/DBTypes';
+import {LoginResponse, UserResponse} from '@sharedTypes/MessageTypes';
 import fetchData from '../../utils/fetchData';
 import OTPAuth from 'otpauth';
 import twoFAModel from '../models/twoFAModel';
 import QRCode from 'qrcode';
+import jwt from 'jsonwebtoken';
 
 // TODO: Define setupTwoFA function
 const setupTwoFA = async (
@@ -62,20 +63,66 @@ const setupTwoFA = async (
   }
 };
 
-// TODO: Define verifyTwoFA function
-/*
-const verifyTwoFA = async (req, res, next) => {
+const verifyTwoFA = async (
+  req: Request<{}, {}, {email: string; code: string}>,
+  res: Response<LoginResponse>,
+  next: NextFunction,
+) => {
   const {email, code} = req.body;
 
   try {
-    // TODO: Retrieve 2FA data from the database
-    // TODO: Validate the 2FA code
-    // TODO: If valid, get the user from AUTH API
-    // TODO: Create and return a JWT token
+    // Retrieve 2FA data from the database
+    const twoFactorData = await twoFAModel.findOne({email});
+    if (!twoFactorData || !twoFactorData.twoFactorEnabled) {
+      next(new CustomError('2FA not enabled', 400));
+      return;
+    }
+    console.log('twoFData', twoFactorData);
+
+    // Validate the 2FA code
+    const totp = new OTPAuth.TOTP({
+      issuer: 'ElukkaAPI',
+      label: email,
+      algorithm: 'SHA1',
+      digits: 6,
+      period: 30,
+      secret: OTPAuth.Secret.fromBase32(twoFactorData.twoFactorSecret),
+    });
+    const isValid = totp.validate({token: code, window: 1});
+
+    if (!isValid) {
+      next(new CustomError('Verification code is not valid', 400));
+      return;
+    }
+
+    // If valid, get the user from AUTH API
+    const userResponse = await fetchData<UserWithLevel>(
+      process.env.AUTH_URL + '/api/v1/users/' + twoFactorData.userId,
+    );
+
+    if (!userResponse) {
+      next(new CustomError('User not found', 401));
+      return;
+    }
+
+    // Create and return a JWT token
+    const tokenContent: TokenContent = {
+      user_id: userResponse.user_id,
+      level_name: userResponse.level_name,
+    };
+    if (!process.env.JWT_SECRET) {
+      throw new Error('JWT_SECRET not set');
+    }
+    const token = jwt.sign(tokenContent, process.env.JWT_SECRET);
+    const loginResponse: LoginResponse = {
+      user: userResponse,
+      token,
+      message: 'Login Success',
+    };
+    res.json(loginResponse);
   } catch (error) {
     next(new CustomError((error as Error).message, 500));
   }
 };
-*/
 
-export {setupTwoFA};
+export {setupTwoFA, verifyTwoFA};

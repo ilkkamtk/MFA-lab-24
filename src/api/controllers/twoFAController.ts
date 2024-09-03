@@ -31,6 +31,7 @@ const setupTwoFA = async (
 
     // Generate a new 2FA secret
     const secret = new OTPAuth.Secret();
+    console.log('secret', secret);
 
     // Create the TOTP instance
     const totp = new OTPAuth.TOTP({
@@ -42,16 +43,17 @@ const setupTwoFA = async (
       secret: secret,
     });
 
+    console.log('totp', totp.toString());
+
     // Store or update the 2FA data in the database
     await twoFAModel.create({
       email: userResponse.user.email,
       userId: userResponse.user.user_id,
       twoFactorEnabled: true,
-      twoFactorSecret: secret,
+      twoFactorSecret: secret.base32,
     });
 
     // Generate a QR code and send it in the response
-    console.log('totp', totp.toString());
     const imageUrl = await QRCode.toDataURL(totp.toString());
 
     res.json({qrCodeUrl: imageUrl});

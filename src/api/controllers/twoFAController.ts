@@ -90,7 +90,9 @@ const verifyTwoFA = async (
     });
     const isValid = totp.validate({token: code, window: 1});
 
-    if (!isValid) {
+    console.log('isvalid', isValid);
+
+    if (isValid === null) {
       next(new CustomError('Verification code is not valid', 400));
       return;
     }
